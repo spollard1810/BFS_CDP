@@ -1,8 +1,6 @@
 [CmdletBinding()]
 param(
     [string]$HostsFile,
-    [string]$Username,
-    [string]$Password,
     [string]$SecureCrt,
     [string]$ScriptPath,
     [string]$OutputDir,
@@ -11,7 +9,8 @@ param(
     [string]$EdgesFile,
     [string]$InventoryFile,
     [int]$TimeoutSec,
-    [int]$MaxDepth
+    [int]$MaxDepth,
+    [pscredential]$Credential
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,7 +52,7 @@ $NextHostsFile = Resolve-RelativePath $NextHostsFile
 $EdgesFile     = Resolve-RelativePath $EdgesFile
 $InventoryFile = Resolve-RelativePath $InventoryFile
 
-function Quote-Arg {
+function ConvertTo-QuotedArg {
     param([string]$Value)
     if ($null -eq $Value) { return '""' }
     return '"' + ($Value -replace '"', '""') + '"'
@@ -104,14 +103,14 @@ function Get-CdpNeighbors {
     return $neighbors | Sort-Object -Unique
 }
 
-function Detect-PlatformFromInventory {
+function Get-PlatformFromInventory {
     param([string]$Text)
     if ($Text -match '(?i)nexus|nx-os') { return "Nexus" }
     if ($Text -match '(?i)catalyst|ios[-\s]?xe|ws-c') { return "Catalyst" }
     return "Unknown"
 }
 
-function Parse-InventoryGeneric {
+function ConvertFrom-InventoryGeneric {
     param([string]$Text)
     $pattern = '(?ms)NAME:\s*"(?<Name>[^"]+)"\s*,\s*DESCR:\s*"(?<Descr>[^"]*)"\s*.*?\n\s*PID:\s*(?<Pid>[^,\r\n]+)\s*,\s*VID:\s*(?<Vid>[^,\r\n]+)\s*,\s*SN:\s*(?<Sn>\S+)'
     $invMatches = [regex]::Matches($Text, $pattern)
@@ -153,14 +152,24 @@ function Parse-InventoryGeneric {
     }
 }
 
-function Parse-InventoryNexus {
+function ConvertFrom-InventoryNexus {
     param([string]$Text)
-    return Parse-InventoryGeneric -Text $Text
+    return ConvertFrom-InventoryGeneric -Text $Text
 }
 
-function Parse-InventoryCatalyst {
+function ConvertFrom-InventoryCatalyst {
     param([string]$Text)
-    return Parse-InventoryGeneric -Text $Text
+    return ConvertFrom-InventoryGeneric -Text $Text
+}
+
+function ConvertTo-PlainText {
+    param([securestring]$SecureString)
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    }
 }
 
 function Get-InventoryInfo {
@@ -170,11 +179,11 @@ function Get-InventoryInfo {
     $text = Get-Content -Path $Path -Raw
     $text = $text -replace "`r`n", "`n"
 
-    $platform = Detect-PlatformFromInventory -Text $text
+    $platform = Get-PlatformFromInventory -Text $text
     switch ($platform) {
-        "Nexus"    { $info = Parse-InventoryNexus -Text $text }
-        "Catalyst" { $info = Parse-InventoryCatalyst -Text $text }
-        default    { $info = Parse-InventoryGeneric -Text $text }
+        "Nexus"    { $info = ConvertFrom-InventoryNexus -Text $text }
+        "Catalyst" { $info = ConvertFrom-InventoryCatalyst -Text $text }
+        default    { $info = ConvertFrom-InventoryGeneric -Text $text }
     }
 
     if (-not $info) { return $null }
@@ -215,11 +224,12 @@ if (-not (Test-Path $ScriptPath)) {
     throw "VBS script not found: $ScriptPath"
 }
 
-if ([string]::IsNullOrWhiteSpace($Username) -or [string]::IsNullOrWhiteSpace($Password)) {
-    $cred = Get-Credential -Message "Enter device credentials"
-    $Username = $cred.UserName
-    $Password = $cred.GetNetworkCredential().Password
+if (-not $Credential) {
+    $Credential = Get-Credential -Message "Enter device credentials"
 }
+
+$Username = $Credential.UserName
+$authSecret = ConvertTo-PlainText -SecureString $Credential.Password
 
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 $cdpDir = Join-Path $OutputDir "cdp"
@@ -272,12 +282,12 @@ while ($currentHosts.Count -gt 0) {
 
         Write-Host "Connecting to $device..."
         $argumentList = "/SCRIPT " +
-            (Quote-Arg $ScriptPath) + " " +
-            (Quote-Arg $device) + " " +
-            (Quote-Arg $Username) + " " +
-            (Quote-Arg $Password) + " " +
-            (Quote-Arg $cdpPath) + " " +
-            (Quote-Arg $invPath)
+            (ConvertTo-QuotedArg $ScriptPath) + " " +
+            (ConvertTo-QuotedArg $device) + " " +
+            (ConvertTo-QuotedArg $Username) + " " +
+            (ConvertTo-QuotedArg $authSecret) + " " +
+            (ConvertTo-QuotedArg $cdpPath) + " " +
+            (ConvertTo-QuotedArg $invPath)
 
         $proc = Start-Process -FilePath $SecureCrt -ArgumentList $argumentList -PassThru -WindowStyle Hidden
         $proc | Wait-Process -Timeout $TimeoutSec | Out-Null

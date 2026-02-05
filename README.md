@@ -4,9 +4,8 @@
 1. Place `Hosts.txt` in the same folder as `executor.ps1` (one hostname/IP per line).
 2. Ensure SecureCRT is installed at `C:\Program Files\VanDyke Software\SecureCRT\SecureCRT.exe` or pass `-SecureCrt` with your path.
 3. Run:
-   ```powershell
    powershell -NoProfile -File .\executor.ps1
-   ```
+
 
 You will be prompted for credentials via a GUI popup.
 
