@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param(
+    [Alias('Path')]
     [string]$HostsFile,
     [string]$SecureCrt,
     [string]$ScriptPath,
@@ -248,11 +249,11 @@ if ($invDirParent -and -not (Test-Path $invDirParent)) {
 }
 
 if (-not (Test-Path $EdgesFile)) {
-    "Source,Neighbor" | Out-File -Path $EdgesFile -Encoding UTF8
+    "Source,Neighbor" | Out-File -FilePath $EdgesFile -Encoding UTF8
 }
 
 if (-not (Test-Path $InventoryFile)) {
-    "Device,Platform,Chassis,Serial,Pid,Descr" | Out-File -Path $InventoryFile -Encoding UTF8
+    "Device,Platform,Chassis,Serial,Pid,Descr" | Out-File -FilePath $InventoryFile -Encoding UTF8
 }
 
 $visited = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
