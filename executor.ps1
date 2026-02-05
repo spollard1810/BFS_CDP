@@ -264,7 +264,7 @@ foreach ($h in $currentHosts) { $found.Add($h) | Out-Null }
 $level = 0
 
 while ($currentHosts.Count -gt 0) {
-    Write-Host "Level $level: $($currentHosts.Count) devices"
+    Write-Host ("Level {0}: {1} devices" -f $level, $currentHosts.Count)
 
     $nextHosts = New-Object System.Collections.Generic.List[string]
 
